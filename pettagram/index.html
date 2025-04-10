@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pettagram</title>
+  <style>
+    /* ================== HOME (griglia) ================== */
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #000;
+    }
+
+    /* La griglia è centrata e non supera la larghezza massima per 3 colonne da 400px + spazi */
+    .grid {
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+        justify-content: center;
+        margin: 0 auto;
+        /* La larghezza massima è: 3 * 400px + 2 gap da 10px = 1220px */
+        max-width: calc(3 * 600px + 2 * 10px);
+        /* Se il contenitore è ampio, usiamo colonne fisse di 400px; altrimenti si adatta */
+        grid-template-columns: repeat(auto-fit, minmax(200px, 600px));
+    }
+    /* Media query per dispositivi molto piccoli: forziamo due colonne,
+    in modo da avere almeno due colonne anche se lo schermo è stretto */
+    @media (max-width: 480px) {
+        .grid {
+            gap: 3px;
+            padding: 0px;
+            grid-template-columns: repeat(2, calc(50% - 5px));
+        }
+    }
+
+    .item {
+      position: relative;
+    }
+
+    .item-icon {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 12px !important;  /* Forza la larghezza a 24px */
+      height: 12px !important; /* Forza l'altezza a 24px */
+      pointer-events: none;    /* Per non interferire con i click sull'item */
+    }
+    /* Per dispositivi desktop, ad esempio a partire da 768px di larghezza: */
+    @media (min-width: 768px) {
+      .item-icon {
+        width: 16px !important;
+        height: 16px !important;
+      }
+    }
+
+    .item img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* ================== MODAL ================== */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    /* Centro su schermo, dimensiona immagine e data */
+    .modal-container {
+      position: relative; 
+      display: inline-block; 
+      /* il container cresce esattamente quanto l’immagine */
+    }
+
+    /* L’immagine non oltrepassa le dimensioni dello schermo */
+    .modal-container img {
+      display: block;
+      max-width: 90vw;   /* max 90% della larghezza viewport */
+      max-height: 90vh;  /* max 90% dell'altezza viewport */
+      object-fit: contain;
+    }
+
+    /* Data inizialmente position:absolute; la posizioniamo via JavaScript
+       per misurare l’immagine e spostarla “fuori” dal suo perimetro */
+    .date-overlay {
+      white-space: nowrap;
+      position: absolute;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 1rem;
+      z-index: 1100;
+    }
+
+    /* Pulsante di chiusura */
+    .close-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: #fff;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-weight: bold;
+      z-index: 1200;
+    }
+
+    /* Frecce navigazione */
+    .arrow {
+      color: white;
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 2rem;
+      padding: 10px;
+      cursor: pointer;
+      user-select: none;
+      z-index: 1200;
+    }
+    .arrow.left {
+      left: 10px;
+    }
+    .arrow.right {
+      right: 10px;
+    }
+
+    /* Dot container, centrato in basso nel modal */
+    .dot-container {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      z-index: 1200;
+    }
+
+    /* Singolo pallino */
+    .dot {
+      height: 5px;
+      width: 5px;
+      background-color: #ccc;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* Pallino attivo, colorato di blu */
+    .dot.active {
+      background-color: blue;
+    }
+
+
+    img {
+        pointer-events: none;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    let manifest = [];
+
+    fetch('manifest.json')
+      .then(res => res.json())
+      .then(data => {
+        manifest = data;
+        renderGrid();
+      })
+      .catch(e => console.error("Errore caricamento manifesto:", e));
+    
+    function renderGrid() {
+      const app = document.getElementById('app');
+      app.innerHTML = "";
+      
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      app.appendChild(grid);
+
+      manifest.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'item';
+        const img = document.createElement('img');
+        
+        if(item.type === 'image') {
+          img.src = item.url;
+          div.addEventListener('click', () => openModal(item.url, item.date));
+        } else if(item.type === 'album') {
+          img.src = item.cover;
+          div.addEventListener('click', () => openAlbumModal(item));
+        }
+        div.appendChild(img);
+        
+        if(item.type === 'album') {
+          // Aggiungi l'icona nell'angolo
+          const icon = document.createElement('img');
+          icon.className = 'item-icon';
+          icon.src = 'album.png';
+          div.appendChild(icon);
+        }
+
+        grid.appendChild(div);
+      });
+    }
+
+    function isTouchDevice() {
+      return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    }
+
+    // ================== Modal immagine singola ==================
+    function openModal(imgUrl, date) {
+      document.body.style.overflow = "hidden";
+
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+
+      // Container relativo
+      const container = document.createElement('div');
+      container.className = 'modal-container';
+      modal.appendChild(container);
+
+      // L'immagine
+      const imageElem = document.createElement('img');
+      imageElem.src = imgUrl;
+      container.appendChild(imageElem);
+
+      // Overlay della data, posizione assoluta (verrà aggiornata al load)
+      const dateOverlay = document.createElement('div');
+      dateOverlay.className = 'date-overlay';
+      dateOverlay.textContent = date;
+      container.appendChild(dateOverlay);
+
+      // Una volta caricata l'immagine, possiamo misurare la dimensione
+      imageElem.addEventListener("load", () => {
+        const imageWidth = imageElem.clientWidth;
+        const imageHeight = imageElem.clientHeight;
+        const isLandscape = window.innerWidth > window.innerHeight;
+
+        if(isLandscape) {
+          // In orizzontale, la posizioniamo fuori in alto a destra
+          dateOverlay.style.top = "-0px";
+          dateOverlay.style.left = (imageWidth + 20) + "px"; 
+          // es: immagine larga 700px -> left = 720 -> 20px fuori dal bordo
+        } else {
+          // In verticale, la posizioniamo fuori in basso a sinistra
+          dateOverlay.style.top = (imageHeight + 20) + "px"; 
+          dateOverlay.style.left = "-0px";
+        }
+      });
+      
+      // Chiudi cliccando sullo sfondo
+      modal.addEventListener('click', (e) => {
+        if(e.target === modal) {
+          document.body.style.overflow = "auto";
+          document.body.removeChild(modal);
+        }
+      });
+      // Impedisci la chiusura cliccando sul container
+      container.addEventListener('click', e => e.stopPropagation());
+
+      document.body.appendChild(modal);
+    }
+
+    // ================== Modal album con slideshow ==================
+    function openAlbumModal(album) {
+      document.body.style.overflow = "hidden";
+
+      let currentIndex = 0;
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+
+      // Container
+      const container = document.createElement('div');
+      container.className = 'modal-container';
+      modal.appendChild(container);
+
+      // Immagine
+      const imageElem = document.createElement('img');
+      imageElem.src = album.images[currentIndex];
+      container.appendChild(imageElem);
+
+      // Data overlay
+      const dateOverlay = document.createElement('div');
+      dateOverlay.className = 'date-overlay';
+      dateOverlay.textContent = album.date;
+      container.appendChild(dateOverlay);
+
+      // Al load dell’immagine: calcola dimensioni e posiziona overlay
+      imageElem.addEventListener("load", () => {
+        const imageWidth = imageElem.clientWidth;
+        const imageHeight = imageElem.clientHeight;
+        const isLandscape = window.innerWidth > window.innerHeight;
+
+        if(isLandscape) {
+          dateOverlay.style.top = "-0px";
+          dateOverlay.style.left = (imageWidth + 20) + "px";
+        } else {
+          dateOverlay.style.top = (imageHeight + 20) + "px";
+          dateOverlay.style.left = "-0px";
+        }
+      });
+
+    // Se il dispositivo non è touch aggiungi le frecce
+    if(!isTouchDevice()) {
+        const leftArrow = document.createElement('div');
+        leftArrow.className = 'arrow left';
+        leftArrow.innerHTML = '&#10094;';
+        modal.appendChild(leftArrow);
+
+        const rightArrow = document.createElement('div');
+        rightArrow.className = 'arrow right';
+        rightArrow.innerHTML = '&#10095;';
+        modal.appendChild(rightArrow);
+
+        leftArrow.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (currentIndex > 0) {
+            currentIndex--;
+            imageElem.src = album.images[currentIndex];
+            updateDots();
+          }
+        });
+        rightArrow.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (currentIndex < album.images.length - 1) {
+            currentIndex++;
+            imageElem.src = album.images[currentIndex];
+            updateDots();
+          }
+        });
+      } else {
+        // Se il dispositivo è touch, aggiungi i listener per lo swipe
+        let touchStartX = 0;
+        let touchEndX = 0;
+        const swipeThreshold = 50; // distanza minima per riconoscere lo swipe
+
+        container.addEventListener('touchstart', (e) => {
+          touchStartX = e.changedTouches[0].screenX;
+        });
+
+        container.addEventListener('touchend', (e) => {
+          touchEndX = e.changedTouches[0].screenX;
+          if(touchEndX < touchStartX - swipeThreshold) {
+            // Swipe a sinistra: immagine successiva
+            if (currentIndex < album.images.length - 1) {
+              currentIndex++;
+              imageElem.src = album.images[currentIndex];
+              updateDots();
+            }
+          } else if(touchEndX > touchStartX + swipeThreshold) {
+            // Swipe a destra: immagine precedente
+            if (currentIndex > 0) {
+              currentIndex--;
+              imageElem.src = album.images[currentIndex];
+              updateDots();
+            }
+          }
+        });
+      }
+
+      // Creazione del dot indicator (pallini)
+      const dotContainer = document.createElement('div');
+      dotContainer.className = 'dot-container';
+      album.images.forEach((_, index) => {
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        if(index === currentIndex) {
+          dot.classList.add('active');
+        }
+        dotContainer.appendChild(dot);
+      });
+      modal.appendChild(dotContainer);
+      
+      // Funzione per aggiornare i pallini in base a currentIndex
+      function updateDots() {
+        const dots = dotContainer.querySelectorAll('.dot');
+        dots.forEach((dot, index) => {
+          if(index === currentIndex) {
+            dot.classList.add('active');
+          } else {
+            dot.classList.remove('active');
+          }
+        });
+      }
+
+      // Chiudi cliccando sullo sfondo
+      modal.addEventListener('click', (e) => {
+        if(e.target === modal) {
+          document.body.style.overflow = "auto";
+          document.body.removeChild(modal);
+        }
+      });
+      container.addEventListener('click', e => e.stopPropagation());
+
+      document.body.appendChild(modal);
+
+      // Funzione che gestisce le frecce della tastiera e Escape
+      function handleKeyDown(e) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (currentIndex > 0) {
+            currentIndex--;
+            imageElem.src = album.images[currentIndex];
+            updateDots();
+          }
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (currentIndex < album.images.length - 1) {
+            currentIndex++;
+            imageElem.src = album.images[currentIndex];
+            updateDots();
+          }
+        } else if (e.key === 'Escape') {
+          closeModal();
+        }
+      }
+      
+      document.addEventListener('keydown', handleKeyDown);
+    }
+  </script>
+</body>
+</html>
